@@ -145,6 +145,9 @@ async function handleWebhookEvent(body) {
 
 // POST /webhook - Incoming message handler
 router.post('/', (req, res) => {
+  console.log("=== INCOMING WEBHOOK ===");
+  console.log(JSON.stringify(req.body, null, 2));
+
   // Always respond 200 OK immediately to Meta (Meta will retry if you don't)
   res.status(200).send('EVENT_RECEIVED');
 
