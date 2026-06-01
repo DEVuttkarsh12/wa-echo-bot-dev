@@ -25,6 +25,62 @@ router.get('/', (req, res) => {
   }
 });
 
+/**
+ * Helper function to determine the appropriate response based on keywords.
+ * @param {string} text - The input text from the message.
+ * @returns {string} The reply message.
+ */
+function getReply(text) {
+  const normalized = (text || '').toLowerCase().trim();
+
+  // Handles greetings (hi, hello, hey)
+  if (/\b(hi|hello|hey)\b/.test(normalized)) {
+    return 'Hey there! 👋 Welcome. Type *help* to see what I can do.';
+  }
+  // Handles help request
+  else if (normalized.includes('help')) {
+    return `Here's what I can help with:
+
+1️⃣ Type *price* → Pricing info
+2️⃣ Type *contact* → Contact details
+3️⃣ Type *about* → About us
+
+Just type any keyword above 👆`;
+  }
+  // Handles pricing information
+  else if (normalized.includes('price') || normalized.includes('pricing') || normalized.includes('cost')) {
+    return `💰 Our Pricing:
+
+• Basic Plan → ₹999/month
+• Pro Plan → ₹2499/month
+• Enterprise → Custom pricing
+
+Reply *contact* to talk to us.`;
+  }
+  // Handles contact details
+  else if (normalized.includes('contact') || normalized.includes('call') || normalized.includes('reach')) {
+    return `📞 Contact Us:
+
+• WhatsApp: +91 XXXXXXXXXX
+• Email: hello@example.com
+• Hours: Mon-Sat, 10am - 7pm`;
+  }
+  // Handles about us details
+  else if (normalized.includes('about') || normalized.includes('who are you') || normalized.includes('what do you do')) {
+    return `🙋 About Us:
+
+We build WhatsApp automation solutions for businesses.
+Fast, reliable, and custom built.
+
+Type *help* to see options.`;
+  }
+  // Default fallback for unmatched inputs
+  else {
+    return `Hmm, I didn't understand that 🤔
+Type *help* to see available options.`;
+  }
+}
+
 // Helper function to safely process webhook event asynchronously
 async function handleWebhookEvent(body) {
   // Payload validation: must be a valid object
@@ -73,11 +129,11 @@ async function handleWebhookEvent(body) {
           continue;
         }
 
-        const replyText = `You said: ${textBody}`;
+        const replyText = getReply(textBody);
         
         try {
           await sendWhatsAppMessage(from, replyText);
-          console.log(`Successfully echoed message back to: ${from}`);
+          console.log(`Successfully replied to: ${from}`);
         } catch (error) {
           // Log errors clearly but never crash the server
           console.error(`Failed to echo message to ${from}:`, error.message);
