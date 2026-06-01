@@ -1,0 +1,20 @@
+{
+  "name": "wa-echo-bot-dev",
+  "version": "1.0.0",
+  "description": "A production-ready WhatsApp Cloud API echo bot",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node -r dotenv/config src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
