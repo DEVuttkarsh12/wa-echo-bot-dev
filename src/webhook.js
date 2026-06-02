@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { sendWhatsAppMessage } = require('./whatsapp');
+const { getAIReply } = require('./gemini');
+const { saveLead } = require('./sheets');
 
 // GET /webhook - Verification Handshake
 router.get('/', (req, res) => {
@@ -24,62 +26,6 @@ router.get('/', (req, res) => {
     res.sendStatus(500);
   }
 });
-
-/**
- * Helper function to determine the appropriate response based on keywords.
- * @param {string} text - The input text from the message.
- * @returns {string} The reply message.
- */
-function getReply(text) {
-  const normalized = (text || '').toLowerCase().trim();
-
-  // Handles greetings (hi, hello, hey)
-  if (/\b(hi|hello|hey)\b/.test(normalized)) {
-    return 'Hey there! 👋 Welcome. Type *help* to see what I can do.';
-  }
-  // Handles help request
-  else if (normalized.includes('help')) {
-    return `Here's what I can help with:
-
-1️⃣ Type *price* → Pricing info
-2️⃣ Type *contact* → Contact details
-3️⃣ Type *about* → About us
-
-Just type any keyword above 👆`;
-  }
-  // Handles pricing information
-  else if (normalized.includes('price') || normalized.includes('pricing') || normalized.includes('cost')) {
-    return `💰 Our Pricing:
-
-• Basic Plan → ₹999/month
-• Pro Plan → ₹2499/month
-• Enterprise → Custom pricing
-
-Reply *contact* to talk to us.`;
-  }
-  // Handles contact details
-  else if (normalized.includes('contact') || normalized.includes('call') || normalized.includes('reach')) {
-    return `📞 Contact Us:
-
-• WhatsApp: +91 XXXXXXXXXX
-• Email: hello@example.com
-• Hours: Mon-Sat, 10am - 7pm`;
-  }
-  // Handles about us details
-  else if (normalized.includes('about') || normalized.includes('who are you') || normalized.includes('what do you do')) {
-    return `🙋 About Us:
-
-We build WhatsApp automation solutions for businesses.
-Fast, reliable, and custom built.
-
-Type *help* to see options.`;
-  }
-  // Default fallback for unmatched inputs
-  else {
-    return `Hmm, I didn't understand that 🤔
-Type *help* to see available options.`;
-  }
-}
 
 // Helper function to safely process webhook event asynchronously
 async function handleWebhookEvent(body) {
@@ -129,7 +75,23 @@ async function handleWebhookEvent(body) {
           continue;
         }
 
-        const replyText = getReply(textBody);
+        let replyText;
+        try {
+          // Call getAIReply from gemini.js
+          const rawReply = await getAIReply(textBody);
+          replyText = rawReply;
+
+          if (replyText && replyText.includes('[LEAD_COMPLETE]')) {
+            // Remove [LEAD_COMPLETE] and replace with the confirmation message
+            replyText = replyText.replace('[LEAD_COMPLETE]', 'Bahut acha! 🎉 Hamari team aapko jald hi contact karegi. Koi aur sawaal ho toh batayein!').trim();
+            // Call saveLead and log
+            await saveLead(from, textBody, new Date().toISOString());
+            console.log("Lead saved for: " + from);
+          }
+        } catch (error) {
+          console.error('Error generating Gemini reply:', error.message);
+          replyText = "Oops! Abhi kuch technical issue aa gaya. Thodi der mein dobara try karein 🙏";
+        }
         
         try {
           await sendWhatsAppMessage(from, replyText);
