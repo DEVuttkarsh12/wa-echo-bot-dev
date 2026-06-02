@@ -49,14 +49,42 @@ const model = genAI.getGenerativeModel({
 });
 
 /**
+ * Helper to retry an async function with exponential backoff on transient/rate-limit errors.
+ */
+async function retryWithBackoff(fn, retries = 3, delay = 1500) {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries <= 0) throw error;
+    
+    // Retry on rate limits (429), timeouts/aborts, transient server errors (5xx), or network errors (no status)
+    const isRateLimit = error.status === 429 || (error.message && error.message.includes('429'));
+    const isTimeout = error.message && (error.message.includes('timeout') || error.message.includes('abort') || error.message.includes('fetch'));
+    const isServerError = error.status >= 500 || (error.message && error.message.includes('503'));
+
+    if (isRateLimit || isTimeout || isServerError || !error.status) {
+      console.warn(`Gemini call failed: ${error.message}. Retrying in ${delay}ms... (${retries} retries left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return retryWithBackoff(fn, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+}
+
+/**
  * Generates a reply from Gemini based on the user message.
  * @param {string} userMessage - The message sent by the user.
  * @returns {Promise<string>} The reply message from Gemini.
  */
 async function getAIReply(userMessage) {
-  try {
-    const result = await model.generateContent(userMessage);
+  const executeCall = async () => {
+    // Generate content with a 10-second timeout to prevent hanging requests
+    const result = await model.generateContent(userMessage, { timeout: 10000 });
     return result.response.text();
+  };
+
+  try {
+    return await retryWithBackoff(executeCall, 3, 1500);
   } catch (error) {
     console.error('Gemini Error Full:', error.message, error.status, error.errorDetails);
     throw error;
