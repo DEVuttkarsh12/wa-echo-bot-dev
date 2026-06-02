@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SESSION_FILE_PATH = path.join(__dirname, '..', 'sessions.json');
-const MAX_HISTORY_LENGTH = 20; // Keep last 20 messages (10 turns) to manage context window
+const MAX_HISTORY_LENGTH = 10; // Keep last 10 messages (5 turns) to stay under free tier token limits
 
 // In-memory store
 let sessions = {};
