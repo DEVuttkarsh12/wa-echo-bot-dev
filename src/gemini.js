@@ -54,9 +54,13 @@ const model = genAI.getGenerativeModel({
  * @returns {Promise<string>} The reply message from Gemini.
  */
 async function getAIReply(userMessage) {
-  // Generate content statelessly
-  const result = await model.generateContent(userMessage);
-  return result.response.text();
+  try {
+    const result = await model.generateContent(userMessage);
+    return result.response.text();
+  } catch (error) {
+    console.error('Gemini Error Full:', error.message, error.status, error.errorDetails);
+    throw error;
+  }
 }
 
 module.exports = {
