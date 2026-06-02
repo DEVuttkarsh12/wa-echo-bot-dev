@@ -1,12 +1,11 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 
-// Fetch the API key from environment variables
-const apiKey = process.env.GEMINI_API_KEY;
+// Initialize the Groq client
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// Initialize the Gemini API client
-const genAI = new GoogleGenerativeAI(apiKey);
+const MODEL = 'llama-3.3-70b-versatile';
 
-const systemInstruction = `You are Aryan, a friendly and professional real estate assistant 
+const systemPrompt = `You are Aryan, a friendly and professional real estate assistant 
 for a leading Indian real estate agency. You help customers with 
 both residential and commercial properties.
 
@@ -56,35 +55,27 @@ Rules:
 - Always be helpful and never rude.
 - If user seems ready to visit, tell them our team will contact them shortly.`;
 
-// Initialize the model with the system instruction
-const model = genAI.getGenerativeModel({
-  model: 'gemini-3.5-flash',
-  systemInstruction: systemInstruction,
-});
-
 /**
- * Helper to retry an async function with exponential backoff on transient/rate-limit errors.
+ * Helper to retry an async function with exponential backoff.
  */
 async function retryWithBackoff(fn, retries = 2, delay = 2000) {
   try {
     return await fn();
   } catch (error) {
     if (retries <= 0) throw error;
-    
-    const isRateLimit = error.status === 429 || (error.message && error.message.includes('429'));
-    const isTimeout = error.message && (error.message.includes('timeout') || error.message.includes('abort') || error.message.includes('fetch'));
-    const isServerError = error.status >= 500 || (error.message && error.message.includes('503'));
+
+    const status = error.status || error.statusCode;
+    const msg = error.message || '';
+    const isRateLimit = status === 429 || msg.includes('429');
+    const isTransient = status >= 500 || msg.includes('timeout') || msg.includes('abort');
 
     if (isRateLimit) {
-      // Rate limit: wait much longer (30s) and only retry once
-      const rateLimitDelay = 30000;
-      console.warn(`Gemini rate limit hit (429). Waiting ${rateLimitDelay / 1000}s before retry... (${retries} retries left)`);
-      await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
-      return retryWithBackoff(fn, 0, rateLimitDelay); // no further retries after this
-    } else if (isTimeout || isServerError || !error.status) {
-      // Transient errors: quick retry with backoff
-      console.warn(`Gemini call failed: ${error.message}. Retrying in ${delay}ms... (${retries} retries left)`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      console.warn(`Groq rate limit hit. Waiting 5s before retry...`);
+      await new Promise(r => setTimeout(r, 5000));
+      return retryWithBackoff(fn, retries - 1, 5000);
+    } else if (isTransient || !status) {
+      console.warn(`Groq call failed: ${msg}. Retrying in ${delay}ms... (${retries} left)`);
+      await new Promise(r => setTimeout(r, delay));
       return retryWithBackoff(fn, retries - 1, delay * 2);
     }
     throw error;
@@ -92,31 +83,43 @@ async function retryWithBackoff(fn, retries = 2, delay = 2000) {
 }
 
 /**
- * Generates a reply from Gemini based on the user message and history.
+ * Generates a reply using Groq (Llama 3.3 70B) with conversation history.
  * @param {string} userMessage - The message sent by the user.
- * @param {Array} history - The chat history array.
+ * @param {Array} history - Chat history in OpenAI format: [{ role, content }]
  * @returns {Promise<object>} Object containing replyText and updatedHistory.
  */
 async function getAIReply(userMessage, history = []) {
   const executeCall = async () => {
-    // Start chat session with current history
-    const chat = model.startChat({ history });
-    
-    // Send message with a 10-second timeout to prevent hanging requests
-    const result = await chat.sendMessage(userMessage, { timeout: 10000 });
-    const replyText = result.response.text();
-    const updatedHistory = await chat.getHistory();
-    
-    return {
-      replyText,
-      updatedHistory,
-    };
+    // Build the messages array: system + history + new user message
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history,
+      { role: 'user', content: userMessage },
+    ];
+
+    const chatCompletion = await groq.chat.completions.create({
+      model: MODEL,
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 500,
+    });
+
+    const replyText = chatCompletion.choices[0]?.message?.content || '';
+
+    // Build updated history (old history + this turn)
+    const updatedHistory = [
+      ...history,
+      { role: 'user', content: userMessage },
+      { role: 'assistant', content: replyText },
+    ];
+
+    return { replyText, updatedHistory };
   };
 
   try {
-    return await retryWithBackoff(executeCall, 3, 1500);
+    return await retryWithBackoff(executeCall, 2, 2000);
   } catch (error) {
-    console.error('Gemini Error Full:', error.message, error.status, error.errorDetails);
+    console.error('Groq Error:', error.message, error.status);
     throw error;
   }
 }
