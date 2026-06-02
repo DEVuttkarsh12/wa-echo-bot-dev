@@ -110,6 +110,13 @@ router.post('/', (req, res) => {
   console.log("=== INCOMING WEBHOOK ===");
   console.log(JSON.stringify(req.body, null, 2));
 
+  const body = req.body;
+  const value = body.entry?.[0]?.changes?.[0]?.value;
+  if (!value?.messages || value?.statuses) return res.sendStatus(200);
+
+  const message = value.messages[0];
+  if (!message || message.type !== 'text') return res.sendStatus(200);
+
   // Always respond 200 OK immediately to Meta (Meta will retry if you don't)
   res.status(200).send('EVENT_RECEIVED');
 
